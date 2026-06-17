@@ -1,4 +1,16 @@
 terraform {
+  backend "s3" {
+    bucket = "mi-terraform-state-bucket-test"
+    key    = "ec2-test/terraform.tfstate"
+    region = "us-east-1"
+  }
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
   required_providers {
     aws = {
       source  = "hashicorp/aws"
