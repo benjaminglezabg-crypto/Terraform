@@ -1,1 +1,31 @@
+version: 0.2
 
+env:
+  variables:
+    TF_VERSION: "1.9.8"
+
+phases:
+  install:
+    commands:
+      - echo "Installing Terraform..."
+      - curl -o terraform.zip https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
+      - unzip terraform.zip
+      - mv terraform /usr/local/bin/
+      - terraform version
+
+  pre_build:
+    commands:
+      - echo "Initializing Terraform..."
+      - terraform init
+
+  build:
+    commands:
+      - echo "Validating Terraform..."
+      - terraform validate
+      - echo "Planning Terraform..."
+      - terraform plan -out=tfplan
+
+  post_build:
+    commands:
+      - echo "Applying Terraform..."
+      - terraform apply -auto-approve tfplan
