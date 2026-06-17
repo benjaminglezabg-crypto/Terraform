@@ -34,7 +34,7 @@ data "aws_ami" "amazon_linux_2023" {
 }
 
 resource "aws_security_group" "ec2_sg" {
-  name        = "ec2-test-sg"
+  name        = "ec2-test-sg-1"
   description = "Allow SSH access"
   vpc_id      = "vpc-0b501d57c8b31ebe3"
 
