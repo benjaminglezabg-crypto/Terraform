@@ -8,21 +8,21 @@ phases:
   install:
     commands:
       - echo "Installing Terraform..."
-      - curl -o terraform.zip https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
-      - unzip terraform.zip
+      - curl -fsSLo terraform.zip "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip"
+      - unzip -o terraform.zip
       - mv terraform /usr/local/bin/
       - terraform version
 
   pre_build:
     commands:
       - echo "Initializing Terraform..."
-      - terraform init
+      - terraform init -reconfigure
+      - terraform fmt -check
+      - terraform validate
 
   build:
     commands:
-      - echo "Validating Terraform..."
-      - terraform validate
-      - echo "Planning Terraform..."
+      - echo "Creating Terraform plan..."
       - terraform plan -out=tfplan
       - echo "Applying Terraform..."
       - terraform apply -auto-approve tfplan
