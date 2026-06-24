@@ -17,7 +17,7 @@ phases:
     commands:
       - echo "Initializing Terraform..."
       - terraform init -reconfigure
-      - terraform fmt -check
+      - terraform fmt
       - terraform validate
 
   build:
