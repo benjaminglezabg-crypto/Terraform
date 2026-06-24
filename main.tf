@@ -29,7 +29,7 @@ provider "aws" {
 }
 
 # ============================================================
-# Availability Zones
+# Availability Zones1
 # ============================================================
 
 data "aws_availability_zones" "available" {
