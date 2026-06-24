@@ -10,27 +10,18 @@ variable "cluster_name" {
   default     = "mi-eks-fargate"
 }
 
-variable "subnet_ids" {
-  description = "Subnets used by the EKS control plane"
-  type        = list(string)
-
-  validation {
-    condition     = length(var.subnet_ids) >= 2
-    error_message = "EKS requires at least two subnets in different Availability Zones."
-  }
-}
-
-variable "private_subnet_ids" {
-  description = "Private subnets used by EKS Fargate"
-  type        = list(string)
-
-  validation {
-    condition     = length(var.private_subnet_ids) >= 2
-    error_message = "Provide at least two private subnets."
-  }
+variable "vpc_cidr" {
+  description = "CIDR block for the EKS VPC"
+  type        = string
+  default     = "10.20.0.0/16"
 }
 
 variable "eks_public_access_cidr" {
-  description = "CIDR allowed to access the public EKS API endpoint"
+  description = "CIDR permitted to access the public EKS API endpoint"
   type        = string
+
+  validation {
+    condition     = can(cidrnetmask(var.eks_public_access_cidr))
+    error_message = "eks_public_access_cidr must be a valid CIDR, such as 177.249.175.66/32."
+  }
 }
