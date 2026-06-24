@@ -15,14 +15,13 @@ phases:
 
   pre_build:
     commands:
-      - echo "Initializing Terraform..."
+      - echo "Initializing Terraform backend..."
       - terraform init -reconfigure
-      - terraform fmt
       - terraform validate
 
   build:
     commands:
-      - echo "Creating Terraform plan..."
-      - terraform plan -out=tfplan
-      - echo "Applying Terraform..."
-      - terraform apply -auto-approve tfplan
+      - echo "Creating destruction plan..."
+      - terraform plan -destroy -out=destroyplan
+      - echo "Destroying infrastructure..."
+      - terraform apply -auto-approve destroyplan
