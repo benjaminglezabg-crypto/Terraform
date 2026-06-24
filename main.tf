@@ -1,8 +1,9 @@
 terraform {
   backend "s3" {
-    bucket = "mi-terraform-state-bucket-test1"
-    key    = "ec2-test/terraform.tfstate"
-    region = "us-east-1"
+    bucket  = "mi-terraform-state-bucket-test1"
+    key     = "eks-test/terraform.tfstate"
+    region  = "us-east-1"
+    encrypt = true
   }
 
   required_providers {
@@ -11,68 +12,160 @@ terraform {
       version = "~> 6.0"
     }
   }
+
+  required_version = ">= 1.8.0"
 }
 
 provider "aws" {
-  region = "us-east-1"
+  region = var.aws_region
 }
 
-data "aws_ami" "amazon_linux_2023" {
-  most_recent = true
-  owners      = ["amazon"]
+# ------------------------------------------------------------
+# IAM role para el control plane de EKS
+# ------------------------------------------------------------
 
-  filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
-}
+resource "aws_iam_role" "eks_cluster_role" {
+  name = "${var.cluster_name}-cluster-role"
 
-resource "aws_security_group" "ec2_sg" {
-  name        = "ec2-test-sg-1"
-  description = "Allow SSH access"
-  vpc_id      = "vpc-0b501d57c8b31ebe3"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
 
   tags = {
-    Name = "ec2-test-sg"
+    Name        = "${var.cluster_name}-cluster-role"
+    Environment = "test"
   }
 }
 
-resource "aws_vpc_security_group_ingress_rule" "ssh_from_my_ip" {
-  security_group_id = aws_security_group.ec2_sg.id
-  cidr_ipv4         = "177.249.175.66/32"
-  ip_protocol       = "tcp"
-  from_port         = 22
-  to_port           = 22
-  description       = "Allow SSH from my IP"
+resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
+  role       = aws_iam_role.eks_cluster_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
-resource "aws_vpc_security_group_egress_rule" "allow_all_outbound" {
-  security_group_id = aws_security_group.ec2_sg.id
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
-}
+# ------------------------------------------------------------
+# Cluster EKS
+# ------------------------------------------------------------
 
-resource "aws_instance" "test_ec2" {
-  ami                         = data.aws_ami.amazon_linux_2023.id
-  instance_type               = "t2.micro"
-  subnet_id                   = "subnet-063d07d493700917c"
-  vpc_security_group_ids      = [aws_security_group.ec2_sg.id]
-  associate_public_ip_address = true
-  key_name                    = "new"
+resource "aws_eks_cluster" "eks" {
+  name     = var.cluster_name
+  role_arn = aws_iam_role.eks_cluster_role.arn
+
+  vpc_config {
+    subnet_ids              = var.subnet_ids
+    endpoint_public_access  = true
+    endpoint_private_access = true
+
+    public_access_cidrs = [
+      var.eks_public_access_cidr
+    ]
+  }
+
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.eks_cluster_policy
+  ]
 
   tags = {
-    Name = "ec2-test-terraform"
+    Name        = var.cluster_name
+    Environment = "test"
   }
 }
 
-output "public_ip" {
-  value = aws_instance.test_ec2.public_ip
+# ------------------------------------------------------------
+# IAM role de ejecución para los Pods en Fargate
+# ------------------------------------------------------------
+
+resource "aws_iam_role" "fargate_pod_execution_role" {
+  name = "${var.cluster_name}-fargate-pod-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Principal = {
+          Service = "eks-fargate-pods.amazonaws.com"
+        }
+
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.cluster_name}-fargate-pod-role"
+    Environment = "test"
+  }
 }
 
-output "private_ip" {
-  value = aws_instance.test_ec2.private_ip
+resource "aws_iam_role_policy_attachment" "fargate_pod_execution_policy" {
+  role = aws_iam_role.fargate_pod_execution_role.name
+
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy"
 }
 
-output "security_group_id" {
-  value = aws_security_group.ec2_sg.id
+# ------------------------------------------------------------
+# Fargate profile para kube-system
+# ------------------------------------------------------------
+
+resource "aws_eks_fargate_profile" "kube_system" {
+  cluster_name           = aws_eks_cluster.eks.name
+  fargate_profile_name   = "kube-system"
+  pod_execution_role_arn = aws_iam_role.fargate_pod_execution_role.arn
+  subnet_ids             = var.private_subnet_ids
+
+  selector {
+    namespace = "kube-system"
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.fargate_pod_execution_policy
+  ]
+
+  tags = {
+    Name        = "${var.cluster_name}-kube-system"
+    Environment = "test"
+  }
+}
+
+# ------------------------------------------------------------
+# Fargate profile para aplicaciones en namespace default
+# ------------------------------------------------------------
+
+resource "aws_eks_fargate_profile" "default" {
+  cluster_name           = aws_eks_cluster.eks.name
+  fargate_profile_name   = "default"
+  pod_execution_role_arn = aws_iam_role.fargate_pod_execution_role.arn
+  subnet_ids             = var.private_subnet_ids
+
+  selector {
+    namespace = "default"
+  }
+
+  depends_on = [
+    aws_eks_fargate_profile.kube_system
+  ]
+
+  tags = {
+    Name        = "${var.cluster_name}-default"
+    Environment = "test"
+  }
 }
